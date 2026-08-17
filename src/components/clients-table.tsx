@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ComponentProps, type FormEvent } from "react";
 import Link from "next/link";
+import type { FirebaseError } from "firebase/app";
 import { addDoc, collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { Pencil, Plus, Search } from "lucide-react";
 
@@ -15,6 +16,17 @@ import type { Client } from "@/types";
 type ClientFormValues = Pick<Client, "name" | "company" | "email" | "phone" | "status" | "avatarUrl">;
 
 const emptyClient: ClientFormValues = { name: "", company: "", email: "", phone: "", status: "Lead", avatarUrl: "" };
+
+// Keep this check in the client bundle so a missing public Firebase value is
+// reported clearly instead of becoming a generic Firestore write failure.
+const firebaseEnvironment = {
+  NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
 
 export function ClientsTable() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -72,17 +84,37 @@ export function ClientsTable() {
     event.preventDefault();
     setIsSaving(true);
     setError(null);
-    const clientData = { ...formValues, avatarUrl: formValues.avatarUrl || undefined };
 
     try {
+      assertFirebaseEnvironment();
+
+      // Firestore rejects `undefined`; remove optional blank values before every write.
+      const clientData = removeUndefinedValues({
+        ...formValues,
+        avatarUrl: (formValues.avatarUrl ?? "").trim() || undefined,
+      });
+
       if (editingClient?.id) {
-        await setDoc(doc(db, "clients", editingClient.id), clientData, { merge: true });
+        await setDoc(doc(db, "clients", editingClient.id), {
+          ...clientData,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
       } else {
-        await addDoc(collection(db, "clients"), { ...clientData, createdAt: serverTimestamp() });
+        await addDoc(collection(db, "clients"), {
+          ...clientData,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       }
       setIsDialogOpen(false);
-    } catch {
-      setError("Unable to save this client. Please try again.");
+    } catch (error) {
+      const firestoreError = error as FirebaseError;
+      console.error("Firestore Error Code:", firestoreError.code, "Message:", firestoreError.message, error);
+
+      const message = firestoreError.message || "An unknown error occurred while saving the client.";
+      const errorMessage = firestoreError.code ? `${firestoreError.code}: ${message}` : message;
+      setError(errorMessage);
+      window.alert(errorMessage);
     } finally {
       setIsSaving(false);
     }
@@ -154,6 +186,22 @@ export function ClientsTable() {
       </Dialog>
     </section>
   );
+}
+
+function assertFirebaseEnvironment() {
+  const missingVariables = Object.entries(firebaseEnvironment)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+
+  if (missingVariables.length > 0) {
+    throw new Error(`Missing Firebase environment variables: ${missingVariables.join(", ")}`);
+  }
+}
+
+function removeUndefinedValues<T extends Record<string, unknown>>(payload: T) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
 }
 
 function Field({ label, onChange, ...props }: Omit<ComponentProps<typeof Input>, "onChange"> & { label: string; onChange: (value: string) => void }) {
