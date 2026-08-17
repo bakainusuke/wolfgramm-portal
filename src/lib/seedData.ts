@@ -1,85 +1,190 @@
-import { doc, serverTimestamp, writeBatch } from "firebase/firestore";
-
+import { collection, addDoc, serverTimestamp, writeBatch, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { Client, MediaResource } from "@/types";
+import type { MediaResource } from "@/types";
 
-type SeedClient = Omit<Client, "id" | "createdAt"> & { id: string };
-type SeedResource = Omit<MediaResource, "id" | "createdAt"> & { id: string };
+export interface MockClient {
+  name: string;
+  company: string;
+  email: string;
+  phone: string;
+  status: "Active" | "Lead" | "Archived";
+  avatarUrl: string;
+}
 
-const clients: SeedClient[] = [
+export interface MockResource {
+  clientIndex: number; // 0, 1, hoặc 2 tương ứng với client trong danh sách
+  title: string;
+  category: MediaResource["category"];
+  mediaUrl: string;
+  thumbnailUrl: string;
+  fileSize: string;
+  status: "Approved" | "In Review" | "Draft";
+}
+
+const mockClients: MockClient[] = [
   {
-    id: "harbour-and-co",
-    name: "Mia Thompson",
-    company: "Harbour & Co. Property",
-    email: "mia@harbourandco.nz",
-    phone: "+64 21 487 219",
+    name: "Sarah Jenkins",
+    company: "Auckland Metro Brand TVC",
+    email: "sarah.jenkins@aucklandmetro.nz",
+    phone: "+64 21 555 0192",
     status: "Active",
-    avatarUrl: "https://i.pravatar.cc/160?img=47",
+    avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150",
   },
   {
-    id: "northstar-outdoors",
-    name: "Ethan Walker",
-    company: "Northstar Outdoors",
-    email: "ethan@northstaroutdoors.co.nz",
-    phone: "+64 27 631 0842",
+    name: "David Chen",
+    company: "Horizon Real Estate Walkthroughs",
+    email: "david.chen@horizonproperties.co.nz",
+    phone: "+64 22 849 2011",
     status: "Active",
-    avatarUrl: "https://i.pravatar.cc/160?img=12",
+    avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
   },
   {
-    id: "copper-and-vine",
-    name: "Sophie Patel",
-    company: "Copper & Vine",
-    email: "sophie@copperandvine.co.nz",
-    phone: "+64 22 315 7609",
+    name: "Aroha Te Kawa",
+    company: "Pacific Sounds Music Video",
+    email: "aroha@pacificsounds.nz",
+    phone: "+64 27 123 9840",
     status: "Lead",
-    avatarUrl: "https://i.pravatar.cc/160?img=32",
-  },
-  {
-    id: "atlas-architecture",
-    name: "Liam Chen",
-    company: "Atlas Architecture",
-    email: "liam@atlasarchitecture.co.nz",
-    phone: "+64 21 902 176",
-    status: "Active",
-    avatarUrl: "https://i.pravatar.cc/160?img=68",
-  },
-  {
-    id: "bloom-wellness",
-    name: "Amelia Roberts",
-    company: "Bloom Wellness Studio",
-    email: "amelia@bloomwellness.co.nz",
-    phone: "+64 27 558 4301",
-    status: "Archived",
-    avatarUrl: "https://i.pravatar.cc/160?img=45",
+    avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
   },
 ];
 
-const resources: SeedResource[] = [
-  { id: "harbour-summer-listings", clientId: "harbour-and-co", title: "Summer Listings Brand Film", category: "Edited Video", mediaUrl: "https://www.youtube.com/embed/Scxs7L0vhZ4", thumbnailUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80", fileSize: "1.2 GB", status: "Approved" },
-  { id: "harbour-paremata-drone", clientId: "harbour-and-co", title: "Paremata Drone Selects", category: "Raw Footage", mediaUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", thumbnailUrl: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80", fileSize: "8.4 GB", status: "Approved" },
-  { id: "northstar-winter-campaign", clientId: "northstar-outdoors", title: "Winter Range Campaign", category: "Edited Video", mediaUrl: "https://www.youtube.com/embed/aqz-KE-bpKQ", thumbnailUrl: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80", fileSize: "2.6 GB", status: "Approved" },
-  { id: "northstar-reel-01", clientId: "northstar-outdoors", title: "Trail Series — Reel 01", category: "Short-form", mediaUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", thumbnailUrl: "https://images.unsplash.com/photo-1551632811-561732d1e306?auto=format&fit=crop&w=1200&q=80", fileSize: "184 MB", status: "In Review" },
-  { id: "copper-menu-launch", clientId: "copper-and-vine", title: "Autumn Menu Launch", category: "Short-form", mediaUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", thumbnailUrl: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=1200&q=80", fileSize: "96 MB", status: "Draft" },
-  { id: "copper-still-library", clientId: "copper-and-vine", title: "Hero Dish Still Library", category: "Photos", mediaUrl: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=1600&q=80", thumbnailUrl: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=1200&q=80", fileSize: "742 MB", status: "Draft" },
-  { id: "atlas-studio-tour", clientId: "atlas-architecture", title: "Ponsonby Studio Tour", category: "Edited Video", mediaUrl: "https://www.youtube.com/embed/jNQXAC9IVRw", thumbnailUrl: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80", fileSize: "1.8 GB", status: "In Review" },
-  { id: "atlas-project-brief", clientId: "atlas-architecture", title: "Cedar House Production Brief", category: "Documents", mediaUrl: "https://example.com/documents/cedar-house-production-brief.pdf", fileSize: "2.1 MB", status: "Approved" },
-  { id: "bloom-launch-film", clientId: "bloom-wellness", title: "Studio Launch Film", category: "Edited Video", mediaUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", thumbnailUrl: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=1200&q=80", fileSize: "1.5 GB", status: "Approved" },
-  { id: "bloom-social-cutdowns", clientId: "bloom-wellness", title: "Morning Ritual Social Cutdowns", category: "Short-form", mediaUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", thumbnailUrl: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80", fileSize: "225 MB", status: "Approved" },
+const mockResources: MockResource[] = [
+  // Resources for Client 0: Auckland Metro
+  {
+    clientIndex: 0,
+    title: "Main TVC 60s - Final Master (ProRes 422 HQ)",
+    category: "Edited Video",
+    mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    thumbnailUrl: "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=600",
+    fileSize: "1.4 GB",
+    status: "Approved",
+  },
+  {
+    clientIndex: 0,
+    title: "Sony FX6 A-Cam Reel 01 - Golden Hour (S-Log3)",
+    category: "Raw Footage",
+    mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+    thumbnailUrl: "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600",
+    fileSize: "4.8 GB",
+    status: "Draft",
+  },
+  {
+    clientIndex: 0,
+    title: "Instagram Reels & TikTok Cutdown 9:16",
+    category: "Short-form",
+    mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+    thumbnailUrl: "https://images.unsplash.com/photo-1536240478700-b869070f9279?w=600",
+    fileSize: "185 MB",
+    status: "In Review",
+  },
+  {
+    clientIndex: 0,
+    title: "Location Permit & Actor Release Forms",
+    category: "Documents",
+    mediaUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    thumbnailUrl: "https://images.unsplash.com/photo-1568667256549-094345857637?w=600",
+    fileSize: "2.4 MB",
+    status: "Approved",
+  },
+
+  // Resources for Client 1: Horizon Real Estate
+  {
+    clientIndex: 1,
+    title: "Penthouse Cinematic 4K Walkthrough",
+    category: "Edited Video",
+    mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+    thumbnailUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600",
+    fileSize: "850 MB",
+    status: "Approved",
+  },
+  {
+    clientIndex: 1,
+    title: "DJI Inspire 3 Drone Footage - Coastal Views",
+    category: "Raw Footage",
+    mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+    thumbnailUrl: "https://images.unsplash.com/photo-1508614589041-895b88991e3e?w=600",
+    fileSize: "3.2 GB",
+    status: "In Review",
+  },
+  {
+    clientIndex: 1,
+    title: "Architectural Interior Still Photography",
+    category: "Photos",
+    mediaUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200",
+    thumbnailUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=600",
+    fileSize: "95 MB",
+    status: "Approved",
+  },
+
+  // Resources for Client 2: Pacific Sounds
+  {
+    clientIndex: 2,
+    title: "Official Music Video - Color Graded Rough Cut",
+    category: "Edited Video",
+    mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+    thumbnailUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600",
+    fileSize: "2.1 GB",
+    status: "In Review",
+  },
+  {
+    clientIndex: 2,
+    title: "Studio Session B-Roll Stills",
+    category: "Photos",
+    mediaUrl: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=1200",
+    thumbnailUrl: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=600",
+    fileSize: "120 MB",
+    status: "Approved",
+  },
+  {
+    clientIndex: 2,
+    title: "Spotify Canvas & Story Teasers (Vertical)",
+    category: "Short-form",
+    mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
+    thumbnailUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=600",
+    fileSize: "64 MB",
+    status: "Draft",
+  },
 ];
 
-/** Creates or updates the sample portal data using stable document IDs. */
-export async function seedFirestoreData(): Promise<{ clients: number; resources: number }> {
-  const batch = writeBatch(db);
+export async function seedDatabase() {
+  try {
+    const createdClientIds: string[] = [];
 
-  clients.forEach(({ id, ...client }) => {
-    batch.set(doc(db, "clients", id), { ...client, createdAt: serverTimestamp() });
-  });
+    // 1. Seed Clients
+    for (const clientData of mockClients) {
+      const docRef = await addDoc(collection(db, "clients"), {
+        ...clientData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      createdClientIds.push(docRef.id);
+    }
 
-  resources.forEach(({ id, ...resource }) => {
-    batch.set(doc(db, "resources", id), { ...resource, createdAt: serverTimestamp() });
-  });
+    // 2. Seed Resources with mapped clientId
+    const batch = writeBatch(db);
+    for (const res of mockResources) {
+      const targetClientId = createdClientIds[res.clientIndex];
+      const newDocRef = doc(collection(db, "resources"));
+      
+      const resourcePayload = {
+        title: res.title,
+        category: res.category,
+        mediaUrl: res.mediaUrl,
+        thumbnailUrl: res.thumbnailUrl,
+        fileSize: res.fileSize,
+        status: res.status,
+      };
+      batch.set(newDocRef, {
+        ...resourcePayload,
+        clientId: targetClientId,
+        createdAt: serverTimestamp(),
+      });
+    }
 
-  await batch.commit();
-
-  return { clients: clients.length, resources: resources.length };
+    await batch.commit();
+    return { success: true, clientsCount: createdClientIds.length, resourcesCount: mockResources.length };
+  } catch (error: unknown) {
+    console.error("Error seeding database:", error);
+    throw error;
+  }
 }
